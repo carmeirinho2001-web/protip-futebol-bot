@@ -68,30 +68,15 @@ async def start(update, context):
     )
 
 if __name__ == "__main__":
- app = (
-    ApplicationBuilder()
-    .token(TELEGRAM_TOKEN)
-    .build()
-)
-
-job_queue = app.job_queue
-
-job_queue.run_daily(
-    enviar_sinais_automatico,
-    time=datetime.time(hour=10, minute=0)
-)
-
-app.run_polling()
-
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
-    # ENVIO AUTOMÁTICO TODO DIA (10h)
-    app.job_queue.run_daily(
+    job_queue = app.job_queue
+
+    job_queue.run_daily(
         enviar_sinais_automatico,
         time=datetime.time(hour=10, minute=0)
     )
 
     app.run_polling()
-
-
