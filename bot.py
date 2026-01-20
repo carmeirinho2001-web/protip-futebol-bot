@@ -1,13 +1,13 @@
 import requests
 import datetime
 import os
-from telegram import Bot
+import asyncio
+from telegram import Bot, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 
-# IDs dos canais (substitua depois)
 CANAL_FREE_ID = os.getenv("CANAL_FREE_ID")
 CANAL_VIP_ID = os.getenv("CANAL_VIP_ID")
 
@@ -43,40 +43,55 @@ def gerar_sinais(jogos):
 
     return sinais_free, sinais_vip
 
-async def enviar_sinais_automatico(context: ContextTypes.DEFAULT_TYPE):
-    jogos = buscar_jogos_hoje()
-    free, vip = gerar_sinais(jogos)
+async def envio_automatico(app):
+    bot: Bot = app.bot
+    enviado_hoje = None
 
-    bot: Bot = context.bot
+    while True:
+        agora = datetime.datetime.now()
+        hoje = agora.date()
 
-    if free:
-        msg_free = "🔥 SINAIS GRATUITOS – HOJE\n\n" + "\n".join(free) + \
-                   "\n\n👉 Entre no VIP para mais sinais"
-        await bot.send_message(chat_id=CANAL_FREE_ID, text=msg_free)
+        # horário do envio (10:00)
+        if agora.hour == 10 and agora.minute == 0 and enviado_hoje != hoje:
+            jogos = buscar_jogos_hoje()
+            free, vip = gerar_sinais(jogos)
 
-    if vip:
-        msg_vip = "💎 SINAIS VIP – HOJE\n\n" + "\n".join(vip) + \
-                  "\n\n📊 Gestão: 1 unidade"
-        await bot.send_message(chat_id=CANAL_VIP_ID, text=msg_vip)
+            if free:
+                await bot.send_message(
+                    chat_id=CANAL_FREE_ID,
+                    text="🔥 SINAIS GRATUITOS – HOJE\n\n" +
+                         "\n".join(free) +
+                         "\n\n👉 Entre no VIP para mais sinais"
+                )
 
-async def start(update, context):
+            if vip:
+                await bot.send_message(
+                    chat_id=CANAL_VIP_ID,
+                    text="💎 SINAIS VIP – HOJE\n\n" +
+                         "\n".join(vip) +
+                         "\n\n📊 Gestão: 1 unidade"
+                )
+
+            enviado_hoje = hoje
+
+        await asyncio.sleep(60)  # checa a cada 1 minuto
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 ProTip Futebol\n\n"
         "📊 Sinais automáticos todos os dias\n"
-        "💎 Conteúdo VIP disponível\n"
-        "📲 Acompanhe pelo canal"
+        "💎 Canal VIP disponível\n"
+        "⏰ Envio diário automático"
     )
 
-if __name__ == "__main__":
+async def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
-    job_queue = app.job_queue
+    asyncio.create_task(envio_automatico(app))
 
-    job_queue.run_daily(
-        enviar_sinais_automatico,
-        time=datetime.time(hour=10, minute=0)
-    )
+    await app.run_polling()
 
-    app.run_polling()
+if __name__ == "__main__":
+    asyncio.run(main())
