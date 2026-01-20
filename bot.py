@@ -1,82 +1,83 @@
 import requests
 import datetime
 import os
-from telegram import Update
+from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 
+# IDs dos canais (substitua depois)
+CANAL_FREE_ID = os.getenv("CANAL_FREE_ID")
+CANAL_VIP_ID = os.getenv("CANAL_VIP_ID")
+
 HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
-
-# Ligas principais (IDs da API-Football)
-LIGAS_PRINCIPAIS = [
-    2,    # Champions League
-    3,    # Europa League
-    39,   # Premier League
-    40,   # Championship
-    140,  # La Liga
-    135,  # Serie A
-    78,   # Bundesliga
-    61,   # Ligue 1
-    71,   # Brasileirão Série A
-    72    # Brasileirão Série B
-]
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 ProTip Futebol\n\n"
-        "🔥 Sinais automáticos TODOS OS DIAS\n"
-        "⚽ Apenas jogos de HOJE\n"
-        "🏆 Principais ligas\n\n"
-        "Use /sinais para ver os palpites de hoje."
-    )
 
 def buscar_jogos_hoje():
     hoje = datetime.date.today().strftime("%Y-%m-%d")
     url = "https://v3.football.api-sports.io/fixtures"
     params = {"date": hoje}
     r = requests.get(url, headers=HEADERS, params=params, timeout=30)
-    r.raise_for_status()
     return r.json().get("response", [])
 
 def gerar_sinais(jogos):
-    sinais = []
+    sinais_free = []
+    sinais_vip = []
 
     for j in jogos:
-        league_id = j["league"]["id"]
-        status = j["fixture"]["status"]["short"]
+        if j["fixture"]["status"]["short"] != "NS":
+            continue
 
-        if league_id in LIGAS_PRINCIPAIS and status == "NS":
-            home = j["teams"]["home"]["name"]
-            away = j["teams"]["away"]["name"]
-            league = j["league"]["name"]
+        home = j["teams"]["home"]["name"]
+        away = j["teams"]["away"]["name"]
+        league = j["league"]["name"]
 
-            sinais.append(f"🟢 {home} vence vs {away} ({league})")
+        sinais_vip.append(f"🟢 {home} vence vs {away} ({league})")
+        sinais_vip.append(f"🔵 Over 1.5 gols — {home} x {away}")
 
-        if len(sinais) >= 10:  # MAIS PALPITES
+        if len(sinais_free) < 3:
+            sinais_free.append(f"🟢 {home} vence ({league})")
+
+        if len(sinais_vip) >= 12:
             break
 
-    return sinais
+    return sinais_free, sinais_vip
 
-async def sinais(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        jogos = buscar_jogos_hoje()
-        sinais = gerar_sinais(jogos)
+async def enviar_sinais_automatico(context: ContextTypes.DEFAULT_TYPE):
+    jogos = buscar_jogos_hoje()
+    free, vip = gerar_sinais(jogos)
 
-        if sinais:
-            msg = "🔥 SINAIS DE HOJE\n\n" + "\n".join(sinais) + "\n\n📊 Gestão: 1 unidade"
-        else:
-            msg = "❌ Nenhum jogo confiável encontrado para hoje."
+    bot: Bot = context.bot
 
-        await update.message.reply_text(msg)
+    if free:
+        msg_free = "🔥 SINAIS GRATUITOS – HOJE\n\n" + "\n".join(free) + \
+                   "\n\n👉 Entre no VIP para mais sinais"
+        await bot.send_message(chat_id=CANAL_FREE_ID, text=msg_free)
 
-    except Exception:
-        await update.message.reply_text("Erro ao buscar os sinais de hoje.")
+    if vip:
+        msg_vip = "💎 SINAIS VIP – HOJE\n\n" + "\n".join(vip) + \
+                  "\n\n📊 Gestão: 1 unidade"
+        await bot.send_message(chat_id=CANAL_VIP_ID, text=msg_vip)
+
+async def start(update, context):
+    await update.message.reply_text(
+        "🤖 ProTip Futebol\n\n"
+        "📊 Sinais automáticos todos os dias\n"
+        "💎 Conteúdo VIP disponível\n"
+        "📲 Acompanhe pelo canal"
+    )
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("sinais", sinais))
+
+    # ENVIO AUTOMÁTICO TODO DIA (10h)
+    app.job_queue.run_daily(
+        enviar_sinais_automatico,
+        time=datetime.time(hour=10, minute=0)
+    )
+
     app.run_polling()
+
 
